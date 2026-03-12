@@ -1,103 +1,662 @@
-// ─────────────────────────────────────────────────────────────────
-// DinoSaw Survival – Cloudflare Worker (dashboard paste version)
-// Paste this entire file in:
-//   dash.cloudflare.com → Workers & Pages → your worker → Edit Code
-// ─────────────────────────────────────────────────────────────────
+// DinoSaw Crowd Massacre – Cloudflare Worker
+// Paste this in: dash.cloudflare.com → Workers & Pages → Edit Code
 
 const HTML = `<!DOCTYPE html>
 <html lang="ro">
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DinoSaw Survival</title>
-  <meta name="description" content="Joc survival: dinozauri vs fierăstraie rotative." />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0" />
+  <title>DinoSaw – Crowd Massacre</title>
+  <meta name="description" content="Crowd survival: dinozauri vs fierăstraie rotative roșii." />
   <style>
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    body{background:#0a0a1a;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden}
-    #ui-bar{display:flex;gap:40px;padding:10px 30px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;margin-bottom:12px;backdrop-filter:blur(10px)}
-    .stat{text-align:center}
-    .stat-label{font-size:10px;letter-spacing:2px;color:#888;text-transform:uppercase}
-    .stat-value{font-size:24px;font-weight:700;color:#fff}
-    #wave-value{color:#f59e0b}#score-value{color:#34d399}#kills-value{color:#f87171}
-    #canvas{border-radius:12px;border:2px solid rgba(255,255,255,.08);box-shadow:0 0 60px rgba(99,102,241,.3);display:block}
-    #overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.75);backdrop-filter:blur(6px);gap:16px;border-radius:12px;pointer-events:none}
-    #overlay h1{font-size:52px;font-weight:900;color:#fff;letter-spacing:-1px;text-shadow:0 0 40px rgba(245,158,11,.8)}
-    #overlay p{color:#ccc;font-size:16px}
-    #start-btn{margin-top:8px;padding:14px 48px;font-size:18px;font-weight:700;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;border:none;border-radius:999px;cursor:pointer;pointer-events:auto;transition:transform .15s,box-shadow .15s;box-shadow:0 4px 20px rgba(239,68,68,.4)}
-    #start-btn:hover{transform:scale(1.05);box-shadow:0 6px 30px rgba(239,68,68,.6)}
-    #start-btn:active{transform:scale(.97)}
-    #canvas-wrapper{position:relative}
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0d1b2a
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Segoe UI', system-ui, sans-serif
+    }
+
+    #wrap {
+      position: relative;
+      /* Portrait 9:16 on desktop, fills screen on mobile */
+      width: min(100vw, 56.25vh);
+      aspect-ratio: 9/16;
+    }
+
+    #canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      border-radius: 16px
+    }
+
+    /* ── Overlay (start / gameover) ── */
+    #overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: rgba(0, 0, 0, .72);
+      backdrop-filter: blur(8px);
+      border-radius: 16px;
+      z-index: 10
+    }
+
+    #overlay h1 {
+      font-size: clamp(32px, 6vw, 52px);
+      font-weight: 900;
+      color: #fff;
+      text-align: center;
+      line-height: 1.1;
+      text-shadow: 0 0 40px rgba(255, 80, 0, .9)
+    }
+
+    #overlay .sub {
+      color: #ccc;
+      font-size: clamp(13px, 2.5vw, 18px);
+      text-align: center
+    }
+
+    #play-btn {
+      padding: 14px 52px;
+      font-size: clamp(16px, 3vw, 22px);
+      font-weight: 800;
+      background: linear-gradient(135deg, #ff5e00, #e0001b);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: 0 6px 30px rgba(255, 0, 30, .5);
+      transition: transform .15s, box-shadow .15s
+    }
+
+    #play-btn:hover {
+      transform: scale(1.06);
+      box-shadow: 0 8px 40px rgba(255, 0, 30, .7)
+    }
+
+    #play-btn:active {
+      transform: scale(.96)
+    }
+
+    /* ── HUD ── */
+    #hud {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 12px 16px;
+      pointer-events: none;
+      z-index: 5
+    }
+
+    .hud-box {
+      background: rgba(0, 0, 0, .45);
+      border-radius: 10px;
+      padding: 6px 14px;
+      text-align: center;
+      backdrop-filter: blur(4px)
+    }
+
+    .hud-label {
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: #aaa;
+      text-transform: uppercase
+    }
+
+    .hud-val {
+      font-size: clamp(18px, 4vw, 26px);
+      font-weight: 800;
+      color: #fff
+    }
+
+    #hud-kills .hud-val {
+      color: #ff5e5e
+    }
+
+    #hud-wave .hud-val {
+      color: #fbbf24
+    }
+
+    #hud-score .hud-val {
+      color: #4ade80
+    }
   </style>
 </head>
+
 <body>
-<div id="ui-bar">
-  <div class="stat"><div class="stat-label">Val</div><div class="stat-value" id="wave-value">1</div></div>
-  <div class="stat"><div class="stat-label">Scor</div><div class="stat-value" id="score-value">0</div></div>
-  <div class="stat"><div class="stat-label">Uci&#x219;i</div><div class="stat-value" id="kills-value">0</div></div>
-</div>
-<div id="canvas-wrapper">
-  <canvas id="canvas" width="960" height="480"></canvas>
-  <div id="overlay">
-    <h1>&#x1F995; DinoSaw</h1>
-    <p>Dinozaurii merg spre moarte. Tu doar prive&#x219;ti.</p>
-    <button id="start-btn">START JOC</button>
+  <div id="wrap">
+    <canvas id="canvas"></canvas>
+
+    <div id="hud">
+      <div class="hud-box" id="hud-kills">
+        <div class="hud-label">💀 Uciși</div>
+        <div class="hud-val" id="v-kills">0</div>
+      </div>
+      <div class="hud-box" id="hud-wave">
+        <div class="hud-label">🌊 Val</div>
+        <div class="hud-val" id="v-wave">1</div>
+      </div>
+      <div class="hud-box" id="hud-score">
+        <div class="hud-label">💰 Scor</div>
+        <div class="hud-val" id="v-score">0</div>
+      </div>
+    </div>
+
+    <div id="overlay">
+      <h1>🦕 DinoSaw<br />Massacre</h1>
+      <p class="sub">Sute de dinozauri vs zidul de fierăstraie.<br />Privește-i cum sunt tocați.</p>
+      <button id="play-btn">▶ START</button>
+    </div>
   </div>
-</div>
-<script>
-const CFG={canvas:{w:960,h:480},spawnIntervalStart:1400,spawnIntervalMin:200,spawnRateMultiplier:1.25,waveDuration:15000,dinoW:54,dinoH:38,dinoSpeedMin:60,dinoSpeedMax:120,dinoHPStart:40,dinoHPBonus:15,dinoColors:['#4ade80','#86efac','#6ee7b7','#34d399','#a3e635'],sawRadius:22,sawDPS:30,sawRotSpeed:6,sawCols:2,sawRows:9,sawSpacingY:50,sawSpacingX:48,sawWallX:820,sawWallYStart:30,pointsPerKill:10,particleCount:14};
-const canvas=document.getElementById('canvas'),ctx=canvas.getContext('2d'),overlay=document.getElementById('overlay');
-let state='idle',score=0,kills=0,wave=1,spawnInterval=CFG.spawnIntervalStart,spawnTimer=0,waveTimer=0,lastTime=0,dinosaurs=[],saws=[],particles=[];
 
-class Dinosaur{constructor(w){this.x=-CFG.dinoW;this.y=CFG.canvas.h-80;this.w=CFG.dinoW;this.h=CFG.dinoH;this.speed=CFG.dinoSpeedMin+Math.random()*(CFG.dinoSpeedMax-CFG.dinoSpeedMin);this.maxHP=CFG.dinoHPStart+w*CFG.dinoHPBonus;this.hp=this.maxHP;this.color=CFG.dinoColors[Math.floor(Math.random()*CFG.dinoColors.length)];this.scale=0.8+Math.random()*0.4;this.dead=false;this.bobPhase=Math.random()*Math.PI*2}
-update(dt){this.x+=this.speed*dt;this.bobPhase+=8*dt}
-takeDamage(d){if(this.dead)return;this.hp-=d;if(this.hp<=0)this.die()}
-die(){if(this.dead)return;this.dead=true;kills++;score+=CFG.pointsPerKill;updateUI();for(let i=0;i<CFG.particleCount;i++)particles.push(new Particle(this.x+this.w/2,this.y+this.h/2))}
-draw(ctx){const bobY=Math.sin(this.bobPhase)*2,cx=this.x+this.w/2,cy=this.y+this.h/2+bobY;ctx.save();ctx.translate(cx,cy);ctx.scale(this.scale,this.scale);ctx.fillStyle=this.color;ctx.beginPath();ctx.ellipse(0,0,this.w/2,this.h/2,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(this.w*.35,-this.h*.25,this.h*.28,this.h*.24,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#1a1a2e';ctx.beginPath();ctx.arc(this.w*.42,-this.h*.3,3,0,Math.PI*2);ctx.fill();ctx.strokeStyle=this.color;ctx.lineWidth=5;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(-this.w*.5,0);ctx.quadraticCurveTo(-this.w*.75,this.h*.2,-this.w*.9,-this.h*.1);ctx.stroke();ctx.lineWidth=4;[[-0.15,0.45],[0.1,0.45]].forEach(([lx,ly])=>{ctx.beginPath();ctx.moveTo(lx*this.w,ly*this.h);ctx.lineTo((lx-0.04)*this.w,(ly+0.35)*this.h);ctx.stroke()});ctx.restore();const bW=this.w*this.scale,bH=4,bx=this.x+(this.w-bW)/2,by=this.y-10+bobY;ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(bx,by,bW,bH);ctx.fillStyle=this.hp/this.maxHP>0.5?'#4ade80':this.hp/this.maxHP>0.25?'#fbbf24':'#f87171';ctx.fillRect(bx,by,bW*(this.hp/this.maxHP),bH)}}
+  <script>
+    // ═══════════════════════════════════════════════════
+    //  CANVAS SETUP (retina-aware)
+    // ═══════════════════════════════════════════════════
+    const wrap = document.getElementById('wrap');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
 
-class Saw{constructor(x,y){this.x=x;this.y=y;this.r=CFG.sawRadius;this.rot=Math.random()*Math.PI*2}
-update(dt){this.rot+=CFG.sawRotSpeed*dt}
-overlaps(d){const cx=d.x+d.w/2,cy=d.y+d.h/2,hw=(d.w*d.scale)/2,hh=(d.h*d.scale)/2,nX=Math.max(cx-hw,Math.min(cx,cx+hw)),nY=Math.max(cy-hh,Math.min(cy,cy+hh)),dx=this.x-nX,dy=this.y-nY;return dx*dx+dy*dy<this.r*this.r}
-draw(ctx){ctx.save();ctx.translate(this.x,this.y);const g=ctx.createRadialGradient(0,0,this.r*.3,0,0,this.r*1.5);g.addColorStop(0,'rgba(239,68,68,.3)');g.addColorStop(1,'rgba(239,68,68,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,this.r*1.5,0,Math.PI*2);ctx.fill();ctx.rotate(this.rot);const t=10;ctx.fillStyle='#94a3b8';ctx.beginPath();for(let i=0;i<t;i++){const a=(i/t)*Math.PI*2,a2=((i+.5)/t)*Math.PI*2,ir=this.r*.65,tip=this.r*1.22;ctx.lineTo(Math.cos(a)*ir,Math.sin(a)*ir);ctx.lineTo(Math.cos(a2-.08)*tip,Math.sin(a2-.08)*tip);ctx.lineTo(Math.cos(a2+.08)*tip,Math.sin(a2+.08)*tip);ctx.lineTo(Math.cos(a+(1/t)*Math.PI*2)*ir,Math.sin(a+(1/t)*Math.PI*2)*ir)}ctx.closePath();ctx.fill();ctx.fillStyle='#e2e8f0';ctx.beginPath();ctx.arc(0,0,this.r*.55,0,Math.PI*2);ctx.fill();ctx.fillStyle='#475569';ctx.beginPath();ctx.arc(0,0,this.r*.15,0,Math.PI*2);ctx.fill();ctx.restore()}}
+    // Logical canvas size (9:16 portrait)
+    const CW = 480, CH = 854;
+    canvas.width = CW;
+    canvas.height = CH;
 
-class Particle{constructor(x,y){this.x=x;this.y=y;const a=Math.random()*Math.PI*2,s=60+Math.random()*180;this.vx=Math.cos(a)*s;this.vy=Math.sin(a)*s-60;this.life=1;this.decay=0.9+Math.random()*.8;this.size=4+Math.random()*6;this.color='hsl('+(Math.random()*30)+',90%,55%)';this.dead=false}
-update(dt){this.x+=this.vx*dt;this.y+=this.vy*dt;this.vy+=250*dt;this.life-=this.decay*dt;if(this.life<=0)this.dead=true}
-draw(ctx){ctx.globalAlpha=Math.max(0,this.life);ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.size*this.life,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}}
+    // ═══════════════════════════════════════════════════
+    //  CONFIG
+    // ═══════════════════════════════════════════════════
+    const C = {
+      // Saw wall
+      sawX: CW - 60,    // centre of first saw column
+      sawRows: 14,
+      sawCols: 2,
+      sawSpY: 58,
+      sawSpX: 44,
+      sawR: 22,
+      sawDPS: 45,
+      sawRot: 7,        // rad/s
 
-function initSaws(){saws=[];for(let c=0;c<CFG.sawCols;c++)for(let r=0;r<CFG.sawRows;r++)saws.push(new Saw(CFG.sawWallX+c*CFG.sawSpacingX,CFG.sawWallYStart+r*CFG.sawSpacingY))}
-function spawnDino(){const d=new Dinosaur(wave);d.y=CFG.canvas.h-80-Math.random()*20;dinosaurs.push(d)}
+      // Crowd
+      crowdCols: 5,     // creatures per row
+      crowdRowH: 44,    // vertical spacing
+      crowdColW: 60,    // horizontal spacing
+      spawnX: -30,      // start just off‑screen left
+      spawnYCenter: CH * 0.65,
 
-const STARS=Array.from({length:80},()=>({x:Math.random()*960,y:Math.random()*300,r:Math.random()*1.2+.3,a:Math.random()}));
-function drawStars(){STARS.forEach(s=>{ctx.globalAlpha=s.a*(.4+.3*Math.sin(Date.now()/800+s.x));ctx.fillStyle='#e2e8f0';ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill()});ctx.globalAlpha=1}
+      // Creature
+      crW: 28, crH: 22,
+      speedMin: 55, speedMax: 95,
+      hpBase: 50,
+      hpBonusPerWave: 20,
 
-function draw(){const W=CFG.canvas.w,H=CFG.canvas.h,bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#0f172a');bg.addColorStop(1,'#1e293b');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);drawStars();const gY=H-55,fg=ctx.createLinearGradient(0,gY,0,H);fg.addColorStop(0,'#334155');fg.addColorStop(1,'#1e293b');ctx.fillStyle=fg;ctx.fillRect(0,gY,W,H-gY);ctx.strokeStyle='rgba(148,163,184,.3)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,gY);ctx.lineTo(W,gY);ctx.stroke();ctx.strokeStyle='rgba(148,163,184,.06)';ctx.lineWidth=1;for(let i=0;i<8;i++){ctx.beginPath();ctx.moveTo(0,gY+6+i*6);ctx.lineTo(W,gY+6+i*6);ctx.stroke()}const wX=CFG.sawWallX-CFG.sawRadius-10,wW=CFG.sawCols*CFG.sawSpacingX+CFG.sawRadius*2+20;ctx.fillStyle='rgba(15,23,42,.7)';ctx.fillRect(wX,0,wW,H);ctx.fillStyle='rgba(239,68,68,.08)';ctx.fillRect(wX,0,wW,H);ctx.strokeStyle='rgba(239,68,68,.4)';ctx.lineWidth=2;ctx.setLineDash([8,6]);ctx.beginPath();ctx.moveTo(wX,0);ctx.lineTo(wX,H);ctx.stroke();ctx.setLineDash([]);dinosaurs.forEach(d=>d.draw(ctx));saws.forEach(s=>s.draw(ctx));particles.forEach(p=>p.draw(ctx));const pulse=.5+.5*Math.sin(Date.now()/300);ctx.fillStyle='rgba(99,102,241,'+(0.15+pulse*.15)+')';ctx.fillRect(0,0,12,H)}
+      // Points
+      pts: 10,
+      waveMs: 18000,
+      spawnGroupMs: 2200, // ms between crowd groups
+      minGroupMs: 700,
 
-function updateUI(){document.getElementById('wave-value').textContent=wave;document.getElementById('score-value').textContent=score;document.getElementById('kills-value').textContent=kills}
+      // Snow
+      snowCount: 120,
+      particleMax: 600,
+    };
 
-function gameLoop(ts){if(state!=='running')return;requestAnimationFrame(gameLoop);const dt=Math.min((ts-lastTime)/1000,.05);lastTime=ts;spawnTimer+=dt*1000;if(spawnTimer>=spawnInterval){spawnTimer=0;spawnDino()}waveTimer+=dt*1000;if(waveTimer>=CFG.waveDuration){waveTimer=0;wave++;spawnInterval=Math.max(CFG.spawnIntervalMin,spawnInterval/CFG.spawnRateMultiplier);updateUI()}dinosaurs.forEach(d=>d.update(dt));saws.forEach(s=>s.update(dt));particles.forEach(p=>p.update(dt));saws.forEach(saw=>dinosaurs.forEach(dino=>{if(!dino.dead&&saw.overlaps(dino))dino.takeDamage(CFG.sawDPS*dt)}));dinosaurs=dinosaurs.filter(d=>!d.dead&&d.x<CFG.canvas.w+100);particles=particles.filter(p=>!p.dead);draw()}
+    // ═══════════════════════════════════════════════════
+    //  STATE
+    // ═══════════════════════════════════════════════════
+    let running = false;
+    let score = 0, kills = 0, wave = 1;
+    let groupTimer = 0, waveTimer = 0, groupInterval = C.spawnGroupMs;
+    let lastTs = 0;
 
-function startGame(){score=0;kills=0;wave=1;spawnInterval=CFG.spawnIntervalStart;spawnTimer=0;waveTimer=0;dinosaurs=[];particles=[];updateUI();initSaws();overlay.style.display='none';state='running';lastTime=performance.now();requestAnimationFrame(gameLoop)}
+    let creatures = [], saws = [], particles = [], floaters = [], snow = [];
 
-document.getElementById('start-btn').addEventListener('click',startGame);
-initSaws();draw();
-<\/script>
+    // ═══════════════════════════════════════════════════
+    //  SNOW PARTICLES (background)
+    // ═══════════════════════════════════════════════════
+    function initSnow() {
+      snow = Array.from({ length: C.snowCount }, () => ({
+        x: Math.random() * CW,
+        y: Math.random() * CH,
+        r: 1 + Math.random() * 2.5,
+        sp: 18 + Math.random() * 40,
+        drift: (Math.random() - 0.5) * 12,
+        alpha: 0.3 + Math.random() * 0.5,
+      }));
+    }
+
+    function updateSnow(dt) {
+      snow.forEach(s => {
+        s.y += s.sp * dt;
+        s.x += s.drift * dt;
+        if (s.y > CH + 5) { s.y = -5; s.x = Math.random() * CW; }
+        if (s.x > CW + 5) s.x = -5;
+        if (s.x < -5) s.x = CW + 5;
+      });
+    }
+
+    function drawSnow() {
+      snow.forEach(s => {
+        ctx.globalAlpha = s.alpha;
+        ctx.fillStyle = '#d4eeff';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  SAWS
+    // ═══════════════════════════════════════════════════
+    class Saw {
+      constructor(x, y) {
+        this.x = x; this.y = y;
+        this.r = C.sawR;
+        this.rot = Math.random() * Math.PI * 2;
+      }
+      update(dt) { this.rot += C.sawRot * dt; }
+
+      hitTest(cr) {
+        // circle (saw) vs AABB (creature center box)
+        const cx = cr.x, cy = cr.y;
+        const dx = this.x - cx, dy = this.y - cy;
+        return dx * dx + dy * dy < (this.r + C.crW * 0.4) * (this.r + C.crW * 0.4);
+      }
+
+      draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // Glow
+        const grd = ctx.createRadialGradient(0, 0, this.r * .2, 0, 0, this.r * 2);
+        grd.addColorStop(0, 'rgba(255,30,0,.45)');
+        grd.addColorStop(1, 'rgba(255,0,0,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(0, 0, this.r * 2, 0, Math.PI * 2); ctx.fill();
+
+        ctx.rotate(this.rot);
+        const teeth = 12;
+        ctx.fillStyle = '#e11d1d';
+        ctx.beginPath();
+        for (let i = 0; i < teeth; i++) {
+          const a = (i / teeth) * Math.PI * 2;
+          const a2 = ((i + .5) / teeth) * Math.PI * 2;
+          const ir = this.r * .62, tip = this.r * 1.28;
+          ctx.lineTo(Math.cos(a) * ir, Math.sin(a) * ir);
+          ctx.lineTo(Math.cos(a2 - .07) * tip, Math.sin(a2 - .07) * tip);
+          ctx.lineTo(Math.cos(a2 + .07) * tip, Math.sin(a2 + .07) * tip);
+          ctx.lineTo(Math.cos(a + (1 / teeth) * Math.PI * 2) * ir, Math.sin(a + (1 / teeth) * Math.PI * 2) * ir);
+        }
+        ctx.closePath(); ctx.fill();
+
+        // Centre
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(0, 0, this.r * .48, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#c0392b';
+        ctx.beginPath(); ctx.arc(0, 0, this.r * .22, 0, Math.PI * 2); ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    function initSaws() {
+      saws = [];
+      const startY = (CH - (C.sawRows - 1) * C.sawSpY) / 2;
+      for (let c = 0; c < C.sawCols; c++)
+        for (let r = 0; r < C.sawRows; r++)
+          saws.push(new Saw(C.sawX + c * C.sawSpX, startY + r * C.sawSpY));
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  CREATURES (tiny cartoon dinosaurs)
+    // ═══════════════════════════════════════════════════
+    const DINO_COLORS = ['#4ade80', '#86efac', '#fde68a', '#fca5a5', '#a5f3fc', '#c4b5fd'];
+
+    class Creature {
+      constructor(x, y) {
+        this.x = x; this.y = y;
+        this.speed = C.speedMin + Math.random() * (C.speedMax - C.speedMin);
+        this.maxHP = C.hpBase + wave * C.hpBonusPerWave;
+        this.hp = this.maxHP;
+        this.color = DINO_COLORS[Math.floor(Math.random() * DINO_COLORS.length)];
+        this.sc = 0.7 + Math.random() * .5;
+        this.bob = Math.random() * Math.PI * 2;
+        this.dead = false;
+        this.legPhase = Math.random() * Math.PI * 2;
+      }
+
+      update(dt) {
+        this.x += this.speed * dt;
+        this.bob += 10 * dt;
+        this.legPhase += 14 * dt;
+      }
+
+      takeDamage(dmg) {
+        if (this.dead) return;
+        this.hp -= dmg;
+        if (this.hp <= 0) this.die();
+      }
+
+      die() {
+        if (this.dead) return;
+        this.dead = true;
+        kills++; score += C.pts;
+        updateHUD();
+        // Explosion particles
+        for (let i = 0; i < 20; i++) particles.push(new Particle(this.x, this.y, 'blood'));
+        for (let i = 0; i < 6; i++) particles.push(new Particle(this.x, this.y, 'bone'));
+        // Floating score
+        floaters.push({ x: this.x, y: this.y - 10, txt: '+' + C.pts, life: 1, vy: -70 });
+      }
+
+      draw() {
+        const by = Math.sin(this.bob) * 2;
+        ctx.save();
+        ctx.translate(this.x, this.y + by);
+        ctx.scale(this.sc, this.sc);
+
+        const w = C.crW, h = C.crH;
+
+        // Legs (animated)
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        const lAng = Math.sin(this.legPhase) * 0.5;
+        [[-.18, .45, lAng], [.12, .45, -lAng]].forEach(([lx, ly, a]) => {
+          ctx.save();
+          ctx.translate(lx * w, ly * h);
+          ctx.rotate(a);
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, h * .55); ctx.stroke();
+          ctx.restore();
+        });
+
+        // Body
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, w * .52, h * .5, 0, 0, Math.PI * 2); ctx.fill();
+
+        // Head
+        ctx.beginPath();
+        ctx.ellipse(w * .38, -h * .28, h * .3, h * .26, -.2, 0, Math.PI * 2); ctx.fill();
+
+        // Eye
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath(); ctx.arc(w * .46, -h * .35, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(w * .47, -h * .36, 1, 0, Math.PI * 2); ctx.fill();
+
+        // Tail
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(-w * .52, 0);
+        ctx.quadraticCurveTo(-w * .85, h * .15, -w * 1.0, -h * .12);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // HP bar (only show if damaged)
+        if (this.hp < this.maxHP) {
+          const bw = C.crW * this.sc * 1.2, bh = 3;
+          const bx = this.x - bw / 2, by2 = this.y - C.crH * .6 * this.sc - 6;
+          ctx.fillStyle = 'rgba(0,0,0,.5)';
+          ctx.fillRect(bx, by2, bw, bh);
+          const pct = this.hp / this.maxHP;
+          ctx.fillStyle = pct > .5 ? '#4ade80' : pct > .25 ? '#fbbf24' : '#f87171';
+          ctx.fillRect(bx, by2, bw * pct, bh);
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  PARTICLES
+    // ═══════════════════════════════════════════════════
+    class Particle {
+      constructor(x, y, type) {
+        this.x = x; this.y = y;
+        const a = Math.random() * Math.PI * 2;
+        const s = type === 'blood' ? 80 + Math.random() * 200 : 50 + Math.random() * 120;
+        this.vx = Math.cos(a) * s; this.vy = Math.sin(a) * s - 80;
+        this.life = 1;
+        this.decay = type === 'blood' ? 1.1 + Math.random() * .7 : 0.7 + Math.random() * .5;
+        this.r = type === 'blood' ? 3 + Math.random() * 5 : 2 + Math.random() * 3;
+        if (type === 'blood') {
+          const h = Math.random() * 25;
+          this.color = \`hsl(\${h},90%,52%)\`;
+        } else {
+          this.color = '#f8fafc';
+        }
+        this.dead = false;
+      }
+      update(dt) {
+        this.x += this.vx * dt; this.y += this.vy * dt;
+        this.vy += 320 * dt;
+        this.life -= this.decay * dt;
+        if (this.life <= 0) this.dead = true;
+      }
+      draw() {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, Math.max(.5, this.r * this.life), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  SPAWNING
+    // ═══════════════════════════════════════════════════
+    function spawnGroup() {
+      // Spawn a grid of creatures (5 cols × 2-4 rows)
+      const rows = 2 + Math.floor(Math.random() * 3);
+      const cols = C.crowdCols;
+      const jitterY = (Math.random() - .5) * 80;
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const cr = new Creature(
+            C.spawnX - r * 30,   // stagger rows so they arrive together
+            C.spawnYCenter + jitterY + (c - cols / 2) * C.crowdRowH
+          );
+          // Give front rows a tiny speed boost so they bunch up
+          cr.speed += r * 6;
+          creatures.push(cr);
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  HUD
+    // ═══════════════════════════════════════════════════
+    function updateHUD() {
+      document.getElementById('v-kills').textContent = kills;
+      document.getElementById('v-wave').textContent = wave;
+      document.getElementById('v-score').textContent = score;
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  DRAW BACKGROUND (snowy tundra)
+    // ═══════════════════════════════════════════════════
+    function drawBG() {
+      // Sky gradient
+      const sky = ctx.createLinearGradient(0, 0, 0, CH * .7);
+      sky.addColorStop(0, '#091c33');
+      sky.addColorStop(1, '#1a3a5c');
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, CW, CH);
+
+      // Distant mountains
+      ctx.fillStyle = 'rgba(255,255,255,.06)';
+      [[0, CH * .35, 140, CH * .18], [100, CH * .3, 180, CH * .22], [260, CH * .32, 160, CH * .2], [380, CH * .28, 180, CH * .25]].forEach(([x, y, w, h]) => {
+        ctx.beginPath();
+        ctx.moveTo(x, y + h); ctx.lineTo(x + w / 2, y); ctx.lineTo(x + w, y + h);
+        ctx.closePath(); ctx.fill();
+      });
+
+      // Ground (snow)
+      const gY = CH * .62;
+      const grd = ctx.createLinearGradient(0, gY, 0, CH);
+      grd.addColorStop(0, '#d4eeff'); grd.addColorStop(.3, '#b8d9f0'); grd.addColorStop(1, '#8fb8d0');
+      ctx.fillStyle = grd; ctx.fillRect(0, gY, CW, CH - gY);
+
+      // Snow bumps
+      ctx.fillStyle = '#e8f4ff';
+      for (let i = 0; i <= 5; i++) {
+        const bx = i * (CW / 5);
+        ctx.beginPath(); ctx.arc(bx, gY, 60 + Math.sin(i * 1.3) * 20, Math.PI, 0); ctx.fill();
+      }
+
+      // Ground line
+      ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(0, gY); ctx.lineTo(CW, gY); ctx.stroke();
+
+      // Danger zone (saw wall backing)
+      const wallLeft = C.sawX - C.sawR - 14;
+      const wallW = C.sawCols * C.sawSpX + C.sawR * 2 + 16;
+      ctx.fillStyle = 'rgba(100,0,0,.25)'; ctx.fillRect(wallLeft, 0, wallW, CH);
+      ctx.strokeStyle = 'rgba(255,40,40,.55)'; ctx.lineWidth = 2;
+      ctx.setLineDash([10, 7]);
+      ctx.beginPath(); ctx.moveTo(wallLeft, 0); ctx.lineTo(wallLeft, CH); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  MAIN LOOP
+    // ═══════════════════════════════════════════════════
+    function loop(ts) {
+      if (!running) return;
+      requestAnimationFrame(loop);
+
+      const dt = Math.min((ts - lastTs) / 1000, .05);
+      lastTs = ts;
+
+      // ── Timers ──
+      groupTimer += dt * 1000;
+      if (groupTimer >= groupInterval) {
+        groupTimer = 0;
+        spawnGroup();
+      }
+      waveTimer += dt * 1000;
+      if (waveTimer >= C.waveMs) {
+        waveTimer = 0;
+        wave++;
+        groupInterval = Math.max(C.minGroupMs, groupInterval - 120);
+        updateHUD();
+      }
+
+      // ── Update ──
+      creatures.forEach(c => c.update(dt));
+      saws.forEach(s => s.update(dt));
+      particles.forEach(p => p.update(dt));
+
+      // Floating score labels
+      floaters.forEach(f => { f.y += f.vy * dt; f.life -= 1.2 * dt; });
+
+      // ── Collisions ──
+      saws.forEach(saw => {
+        creatures.forEach(cr => {
+          if (!cr.dead && saw.hitTest(cr))
+            cr.takeDamage(C.sawDPS * dt);
+        });
+      });
+
+      // ── Cleanup ──
+      if (particles.length > C.particleMax)
+        particles.splice(0, particles.length - C.particleMax);
+      creatures = creatures.filter(c => !c.dead && c.x < CW + 80);
+      particles = particles.filter(p => !p.dead);
+      floaters = floaters.filter(f => f.life > 0);
+
+      // ── Draw ──
+      drawBG();
+      updateSnow(dt);
+      drawSnow();
+      saws.forEach(s => s.draw());
+      creatures.sort((a, b) => a.y - b.y).forEach(c => c.draw());
+      particles.forEach(p => p.draw());
+
+      // Floating score labels
+      floaters.forEach(f => {
+        ctx.globalAlpha = Math.max(0, f.life);
+        ctx.font = 'bold 18px "Segoe UI",sans-serif';
+        ctx.fillStyle = '#fde68a';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = 'rgba(0,0,0,.6)';
+        ctx.lineWidth = 3;
+        ctx.strokeText(f.txt, f.x, f.y);
+        ctx.fillText(f.txt, f.x, f.y);
+        ctx.globalAlpha = 1;
+      });
+
+      // Pulse on saw wall
+      const pulse = .12 + .06 * Math.sin(ts / 150);
+      ctx.fillStyle = \`rgba(255,0,0,\${pulse})\`;
+      ctx.fillRect(C.sawX - C.sawR - 14, 0, C.sawCols * C.sawSpX + C.sawR * 2 + 16, CH);
+    }
+
+    // ═══════════════════════════════════════════════════
+    //  START
+    // ═══════════════════════════════════════════════════
+    function startGame() {
+      score = 0; kills = 0; wave = 1;
+      groupTimer = 0; waveTimer = 0; groupInterval = C.spawnGroupMs;
+      creatures = []; particles = []; floaters = [];
+      initSnow();
+      initSaws();
+      updateHUD();
+      document.getElementById('overlay').style.display = 'none';
+      running = true;
+      lastTs = performance.now();
+      requestAnimationFrame(loop);
+    }
+
+    document.getElementById('play-btn').addEventListener('click', startGame);
+
+    // Static preview before start
+    initSnow(); initSaws();
+    drawBG(); drawSnow();
+    saws.forEach(s => s.draw());
+  </script>
 </body>
+
 </html>`;
 
 export default {
-    async fetch(request) {
-        const url = new URL(request.url);
-
-        // Serve only root path
-        if (url.pathname === '/' || url.pathname === '/index.html') {
-            return new Response(HTML, {
-                headers: {
-                    'Content-Type': 'text/html;charset=UTF-8',
-                    'Cache-Control': 'public, max-age=3600',
-                },
-            });
-        }
-
-        // 404 for everything else
-        return new Response('Not found', { status: 404 });
-    },
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      return new Response(HTML, {
+        headers: {
+          "Content-Type": "text/html;charset=UTF-8",
+          "Cache-Control": "public, max-age=3600",
+        },
+      });
+    }
+    return new Response("Not found", { status: 404 });
+  },
 };
